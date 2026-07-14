@@ -1,26 +1,14 @@
-try:
-    from setuptools import setup, find_packages
-except ImportError:
-    from distutils.core import setup
-from distutils.extension import Extension
-import numpy
+from setuptools import find_packages, setup
 
-# Get numpy include directory.
-numpy_include_dir = numpy.get_include()
+packages = [p for p in find_packages() if p.startswith('contact_graspnet_pytorch')]
 
-_packages = find_packages()
-
-packages = []
-for p in _packages:
-    if p.startswith('contact_graspnet_pytorch'):
-        packages.append(p)
-
-for p in packages:
-    assert p.startswith('contact_graspnet_pytorch')
-    
 setup(
     name='contact_graspnet_pytorch',
+    version='0.1.0+cpf.1',
     author='multiple',
+    description='PyTorch implementation of Contact-GraspNet',
+    license='NVIDIA Source Code License for Contact-GraspNet',
+    license_files=['License.pdf'],
     packages=packages,
-    package_data={},
+    python_requires='>=3.9',
 )

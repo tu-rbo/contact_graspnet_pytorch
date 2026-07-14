@@ -16,7 +16,7 @@ class GraspEstimator:
     
     :param cfg: config dict
     """
-    def __init__(self, cfg):
+    def __init__(self, cfg, force_cpu=False):
         
         if 'surface_grasp_logdir_folder' in cfg:
             # for sim evaluation
@@ -32,7 +32,10 @@ class GraspEstimator:
         print('model func: ', self._model_func)
         
 
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        device_name = "cpu" if force_cpu else (
+            "cuda:0" if torch.cuda.is_available() else "cpu"
+        )
+        self.device = torch.device(device_name)
         self.model = self._model_func.ContactGraspnet(self._contact_grasp_cfg, self.device)
         self.model.to(self.device)
         # self.placeholders = self._model_func.placeholder_inputs(self._contact_grasp_cfg['OPTIMIZER']['batch_size'],
@@ -168,7 +171,14 @@ class GraspEstimator:
         return pc_segments
     
 
-    def predict_grasps(self, pc, constant_offset=False, convert_cam_coords=True, forward_passes=1):
+    def predict_grasps(
+        self,
+        pc,
+        constant_offset=False,
+        convert_cam_coords=True,
+        forward_passes=1,
+        return_all=False,
+    ):
         """
         Predict raw grasps on point cloud
 
@@ -177,7 +187,10 @@ class GraspEstimator:
         :param convert_cam_coords: Convert from OpenCV to internal training camera coordinates (x left, y up, z front) and converts grasps back to openCV coordinates
         :param constant_offset: do not predict offset and place gripper at constant `extra_opening` distance from contact point
         :param forward_passes: Number of forward passes to run on each point cloud. default: 1
-        :returns: (pred_grasps_cam, pred_scores, pred_points, gripper_openings) Predicted grasps/scores/contact-points/gripper-openings
+        :param return_all: Return raw predictions and their selected indices. The
+            default preserves the upstream API and returns selected predictions.
+        :returns: (pred_grasps_cam, pred_scores, pred_points, gripper_openings)
+            when ``return_all`` is false. Otherwise also returns selection indices.
         """
         
         # Convert point cloud coordinates from OpenCV to internal coordinates (x left, y up, z front)
@@ -243,10 +256,34 @@ class GraspEstimator:
             pred_grasps_cam[:,:2, :] *= -1
             pred_points[:,:2] *= -1
 
-        return pred_grasps_cam[selection_idcs], pred_scores[selection_idcs], pred_points[selection_idcs].squeeze(), gripper_openings[selection_idcs].squeeze()
+        pred_points = pred_points.squeeze()
+        gripper_openings = gripper_openings.squeeze()
+        if return_all:
+            return (
+                pred_grasps_cam,
+                pred_scores,
+                pred_points,
+                gripper_openings,
+                selection_idcs,
+            )
 
-    def predict_scene_grasps(self, pc_full, pc_segments={}, local_regions=False, filter_grasps=False, forward_passes=1, 
-                             use_cam_boxes=True):
+        return (
+            pred_grasps_cam[selection_idcs],
+            pred_scores[selection_idcs],
+            pred_points[selection_idcs],
+            gripper_openings[selection_idcs],
+        )
+
+    def predict_scene_grasps(
+        self,
+        pc_full,
+        pc_segments=None,
+        local_regions=False,
+        filter_grasps=False,
+        forward_passes=1,
+        use_cam_boxes=True,
+        return_all=False,
+    ):
         """
         Predict num_point grasps on a full point cloud or in local box regions around point cloud segments.
 
@@ -264,7 +301,16 @@ class GraspEstimator:
             [np.ndarray, np.ndarray, np.ndarray, np.ndarray] -- pred_grasps_cam, scores, contact_pts, gripper_openings
         """
 
-        pred_grasps_cam, scores, contact_pts, gripper_openings = {}, {}, {}, {}
+        if pc_segments is None:
+            pc_segments = {}
+        if return_all and filter_grasps:
+            raise ValueError(
+                "return_all=True is incompatible with filter_grasps=True because "
+                "segment filtering changes the raw prediction indices"
+            )
+
+        pred_grasps_cam, scores = {}, {}
+        contact_pts, gripper_openings, selection_idcs = {}, {}, {}
 
         # Predict grasps in local regions or full pc
         if local_regions:
@@ -274,11 +320,51 @@ class GraspEstimator:
             else:
                 pc_regions = self.filter_pc_segments(pc_segments) 
             for k, pc_region in pc_regions.items():
-                pred_grasps_cam[k], scores[k], contact_pts[k], gripper_openings[k] = self.predict_grasps(pc_region, convert_cam_coords=True, forward_passes=forward_passes)
+                predictions = self.predict_grasps(
+                    pc_region,
+                    convert_cam_coords=True,
+                    forward_passes=forward_passes,
+                    return_all=return_all,
+                )
+                if return_all:
+                    (
+                        pred_grasps_cam[k],
+                        scores[k],
+                        contact_pts[k],
+                        gripper_openings[k],
+                        selection_idcs[k],
+                    ) = predictions
+                else:
+                    (
+                        pred_grasps_cam[k],
+                        scores[k],
+                        contact_pts[k],
+                        gripper_openings[k],
+                    ) = predictions
         else:
             print('using full pc')
             pc_full = regularize_pc_point_count(pc_full, self._contact_grasp_cfg['DATA']['raw_num_points'])
-            pred_grasps_cam[-1], scores[-1], contact_pts[-1], gripper_openings[-1] = self.predict_grasps(pc_full, convert_cam_coords=True, forward_passes=forward_passes)
+            predictions = self.predict_grasps(
+                pc_full,
+                convert_cam_coords=True,
+                forward_passes=forward_passes,
+                return_all=return_all,
+            )
+            if return_all:
+                (
+                    pred_grasps_cam[-1],
+                    scores[-1],
+                    contact_pts[-1],
+                    gripper_openings[-1],
+                    selection_idcs[-1],
+                ) = predictions
+            else:
+                (
+                    pred_grasps_cam[-1],
+                    scores[-1],
+                    contact_pts[-1],
+                    gripper_openings[-1],
+                ) = predictions
             print('Generated {} grasps'.format(len(pred_grasps_cam[-1])))
 
         # Filter grasp contacts to lie within object segment
@@ -306,7 +392,10 @@ class GraspEstimator:
             # # if not local_regions:  # Was not
             #     del pred_grasps_cam[-1], scores[-1], contact_pts[-1], gripper_openings[-1]
 
-        return pred_grasps_cam, scores, contact_pts, gripper_openings
+        outputs = pred_grasps_cam, scores, contact_pts, gripper_openings
+        if return_all:
+            return (*outputs, selection_idcs)
+        return outputs
     
     def select_grasps(self, contact_pts, contact_conf, max_farthest_points = 150, num_grasps = 200, first_thres = 0.25, second_thres = 0.2, with_replacement=False):
         """

@@ -13,9 +13,10 @@ class CheckpointIO(object):
     Args:
         checkpoint_dir (str): path where checkpoints are saved
     '''
-    def __init__(self, checkpoint_dir='./chkpts', **kwargs):
+    def __init__(self, checkpoint_dir='./chkpts', map_location=None, **kwargs):
         self.module_dict = kwargs
         self.checkpoint_dir = checkpoint_dir
+        self.map_location = map_location
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
 
@@ -62,7 +63,7 @@ class CheckpointIO(object):
         if os.path.exists(filename):
             print(filename)
             print('=> Loading checkpoint from local file...')
-            state_dict = torch.load(filename)
+            state_dict = torch.load(filename, map_location=self.map_location)
             scalars = self.parse_state_dict(state_dict)
             return scalars
         else:
@@ -76,7 +77,11 @@ class CheckpointIO(object):
         '''
         print(url)
         print('=> Loading checkpoint from url...')
-        state_dict = model_zoo.load_url(url, progress=True)
+        state_dict = model_zoo.load_url(
+            url,
+            progress=True,
+            map_location=self.map_location,
+        )
         scalars = self.parse_state_dict(state_dict)
         return scalars
 

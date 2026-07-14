@@ -1,5 +1,16 @@
 # Contact-GraspNet Pytorch
 
+> **CoupledParticleFilters fork.** This fork is pinned by the
+> `tu-rbo/CoupledParticleFilters` research code. It keeps the upstream inference
+> API intact and adds opt-in raw predictions, explicit CPU execution, CPU-safe
+> checkpoint loading, and lazy renderer imports. The NVIDIA Contact-GraspNet
+> license in `License.pdf` applies, including its non-commercial research and
+> evaluation limitation.
+
+Model weights and upstream test data are not distributed from this fork. Obtain
+the Contact-GraspNet checkpoint using the URL and checksum recorded by the
+CoupledParticleFilters release that references this repository.
+
 This is a pytorch implementation of Contact-GraspNet. The original tensorflow
 implementation can be found at [https://github.com/NVlabs/contact_graspnet](https://github.com/NVlabs/contact_graspnet).
 
@@ -19,10 +30,6 @@ ICRA 2021
 
 [paper](https://arxiv.org/abs/2103.14127), [project page](https://research.nvidia.com/publication/2021-03_Contact-GraspNet%3A--Efficient), [video](http://www.youtube.com/watch?v=qRLKYSLXElM)
 
-<p align="center">
-  <img src="examples/2.gif" width="640" title="UOIS + Contact-GraspNet"/>
-</p>
-
 ## Installation
 This code has been tested with python 3.9.
 
@@ -35,6 +42,10 @@ Install as a package.
 ```
 pip3 install -e .
 ```
+
+This fork supports editable installation from its complete source checkout. Its
+PointNet source tree and checkpoint configuration are not bundled into a standalone
+wheel.
 
 ### Troubleshooting
 
@@ -49,7 +60,9 @@ Inference: 1x Nvidia GPU >= 8GB VRAM (might work with less).
 
 
 ## Inference
-Model weights are included in the `checkpoints` directory.  Test data can be found in the `test_data` directory.
+Model weights and test data are intentionally excluded from this fork. Use the
+checkpoint download and verification instructions in the referencing
+CoupledParticleFilters release.
 
 Contact-GraspNet can directly predict a 6-DoF grasp distribution from a raw scene point cloud. However, to obtain object-wise grasps, remove background grasps and to achieve denser proposals it is highly recommended to use (unknown) object segmentation.  We used [FastSAM](https://github.com/CASIA-IVA-Lab/FastSAM) for unknown object segmentation (in contrast to the original tensorflow implementation which uses [UIOS](https://github.com/chrisdxie/uois)).  Note: Infrastructure for segmentation is not included in this repository.
 
@@ -57,17 +70,12 @@ Given a .npy/.npz file with a depth map (in meters), camera matrix K and (option
 
 ```shell
 python contact_graspnet_pytorch/inference.py \
-       --np_path="test_data/*.npy" \
+       --np_path="/path/to/input/*.npy" \
        --local_regions --filter_grasps
 ```
-
-<p align="center">
-  <img src="examples/7.png" width="640" title="UOIS + Contact-GraspNet"/>
-</p>
-Note: This image is from the original Contact-GraspNet repo.  Results may vary.
 --> close the window to go to next scene
 
-Given a .npy/.npz file with just a 3D point cloud (in meters), execute [for example](examples/realsense_crop_sigma_001.png):
+Given a .npy/.npz file with just a 3D point cloud (in meters), execute:
 ```shell
 python contact_graspnet/inference.py --np_path=/path/to/your/pc.npy \
                                      --forward_passes=5 \

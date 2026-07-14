@@ -16,7 +16,6 @@ import trimesh.transformations as tra
 from scipy.spatial import cKDTree
 
 import provider
-from contact_graspnet_pytorch.scene_renderer import SceneRenderer
 
 def load_scene_contacts(dataset_folder, test_split_only=False, num_test=None, scene_contacts_path='scene_contacts_new'):
     """
@@ -465,6 +464,11 @@ class PointCloudReader:
         self._current_pc = None
         self._cache = {}
 
+        # Rendering dependencies are intentionally imported only for training/data
+        # generation. Inference uses the point-cloud helpers in this module and
+        # should not require an OpenGL context or pyrender.
+        from contact_graspnet_pytorch.scene_renderer import SceneRenderer
+
         self._renderer = SceneRenderer(caching=True, intrinsics=intrinsics)
 
         if use_uniform_quaternions:
@@ -615,10 +619,11 @@ class PointCloudReader:
             pc_cam, pc_normals, camera_pose, depth = self.render_random_scene(estimate_normals = self._estimate_normals)
 
             if return_segmap:
-                segmap, _, obj_pcs = self._renderer.render_labels(depth, obj_paths, mesh_scales, render_pc=True)
+                segmap, _, obj_pcs = self._renderer.render_labels(
+                    depth, obj_paths, mesh_scales, render_pc=True
+                )
                 batch_obj_pcs.append(obj_pcs)
                 batch_segmap.append(segmap)
-
             batch_data[i,:,0:3] = pc_cam[:,:3]
             if self._estimate_normals:
                 batch_data[i,:,3:6] = pc_normals[:,:3]
@@ -655,7 +660,9 @@ class PointCloudReader:
         in_camera_pose = copy.deepcopy(camera_pose)
 
         # 0.005 s
-        _, depth, _, camera_pose = self._renderer.render(in_camera_pose, render_pc=False)
+        _, depth, _, camera_pose = self._renderer.render(
+            in_camera_pose, render_pc=False
+        )
         depth = self._augment_depth(depth)
         
         pc = self._renderer._to_pointcloud(depth)
@@ -699,4 +706,3 @@ class PointCloudReader:
     def __del__(self):
         print('********** terminating renderer **************')
     
-
